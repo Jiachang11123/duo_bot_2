@@ -1,0 +1,46 @@
+name: 24/7 Unlimited Nuclear
+
+on:
+  schedule:
+    - cron: "0 */6 * * *" # 每 6 小時重啟一次
+  workflow_dispatch:      # 允許手動按按鈕開始
+
+jobs:
+  nuclear-attack:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false     # 即使其中一個機器人失敗，其他機器人也會繼續運行
+      matrix:
+        bot_id: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] # 定義 10 個機器人編號
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Restore VPN Configs
+        run: |
+          echo "${{ secrets.VPN_ZIP }}" | base64 -d > vpn_configs.zip
+          unzip vpn_configs.zip -d .
+          ls -R vpn_configs
+
+      - name: Install OpenVPN & Python
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openvpn
+          pip install -r requirements.txt || true
+          pip install curl_cffi colorama
+
+      - name: Run Nuclear Bot
+        env:
+          BOT_ID: ${{ matrix.bot_id }} # 將編號傳入 Python
+          DUO_TOKEN: ${{ secrets.DUO_TOKEN }}
+          VPN_USER: ${{ secrets.VPN_USER }}
+          VPN_PASS: ${{ secrets.VPN_PASS }}
+          LINE_ACCESS_TOKEN: ${{ secrets.LINE_ACCESS_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          timeout 350m python main-auto-vpn.py || true
