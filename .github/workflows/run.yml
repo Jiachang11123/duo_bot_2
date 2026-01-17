@@ -2,12 +2,16 @@ name: 24/7 Unlimited Nuclear
 
 on:
   schedule:
-    - cron: "0 */6 * * *" # 每 6 小時強制重啟一次，保持環境新鮮
+    - cron: "0 */6 * * *" # 每 6 小時重啟一次
   workflow_dispatch:      # 允許手動按按鈕開始
 
 jobs:
   nuclear-attack:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false     # 即使其中一個機器人失敗，其他機器人也會繼續運行
+      matrix:
+        bot_id: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] # 定義 10 個機器人編號
     permissions:
       contents: read
     
@@ -19,6 +23,7 @@ jobs:
         run: |
           echo "${{ secrets.VPN_ZIP }}" | base64 -d > vpn_configs.zip
           unzip vpn_configs.zip -d .
+          ls -R vpn_configs
 
       - name: Install OpenVPN & Python
         run: |
@@ -29,7 +34,7 @@ jobs:
 
       - name: Run Nuclear Bot
         env:
-          # 這裡不需要 matrix，單一帳號跑單一任務最快
+          BOT_ID: ${{ matrix.bot_id }} # 將編號傳入 Python
           DUO_TOKEN: ${{ secrets.DUO_TOKEN }}
           VPN_USER: ${{ secrets.VPN_USER }}
           VPN_PASS: ${{ secrets.VPN_PASS }}
@@ -38,9 +43,4 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          # 👇 這才是重點：無限復活迴圈
-          # 當 Python 遇到阻擋自殺後，這裡會接手：
-          # 1. 顯示休息訊息
-          # 2. 等待 15 秒 (讓 IP 冷卻)
-          # 3. 重新執行 Python (Python 會自動換新 VPN)
-          timeout 350m bash -c "while true; do python main-auto-vpn.py; echo '♻️ 觸發重啟機制，冷卻 15 秒...'; sleep 15; done" || true
+          timeout 350m python main-auto-vpn.py || true
