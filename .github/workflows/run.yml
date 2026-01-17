@@ -21,7 +21,7 @@ jobs:
 
       - name: Restore VPN Configs
         run: |
-          echo "${{ secrets.VPN_ZIP }}" | base64 -d > vpn_configs.zip
+          echo "${{ secrets.VPN_ZIP }}" | tr '-_' '+/' | base64 -d > vpn_configs.zip
           unzip vpn_configs.zip -d .
           ls -R vpn_configs
 
