@@ -18,17 +18,25 @@ class C:
     SUCCESS_ICON, FAIL_ICON = f"{BOLD}{G}✔{E}", f"{BOLD}{R}✘{E}"
     SPEED_ICON, TIME_ICON, GEM_ICON = f"{BOLD}{C}⚡{E}", f"{BOLD}{Y}⏰{E}", f"{BOLD}{M}🟣{E}"
 
-# --- [1] 智慧設定區域 ---
-BOT_ID = os.environ.get("BOT_ID", "1") # 讀取編號
+# --- [設定區域] ---
+BOT_ID = os.environ.get("BOT_ID", "1")
+VPN_USER = os.environ.get("VPN_USER", "aFwROLMWIY5ljknZ") 
+VPN_PASS = os.environ.get("VPN_PASS", "XlNXBom0tFVNFp3GNH58xDJASRoxOr8m")
 DEFAULT_TOKEN = os.environ.get("DUO_TOKEN", "")
 
 LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN", "") 
 LINE_USER_ID = os.environ.get("LINE_USER_ID", "")
-
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-# 參數設定
+IS_WINDOWS = sys.platform == 'win32'
+CONFIG_DIR = "./vpn_configs"
+# 確保指向正確的 OpenVPN 路徑
+if IS_WINDOWS:
+    OPENVPN_CMD = [r"C:\Program Files\OpenVPN\bin\openvpn.exe"]
+else:
+    OPENVPN_CMD = ["sudo", "openvpn"]
+
 MAGIC_ID = "SKILL_COMPLETION_BALANCED-…-2-GEMS"
 DEFAULT_THREADS = 100
 DEFAULT_BATCH = 300
@@ -48,11 +56,16 @@ class DuoGemNuclear:
         self.sub = self._decode_jwt(token)
         self.stats = {'success': 0, 'failed': 0}
         self.is_running = True
-        self.kill_switch_active = False # 防止多線程重複觸發
+        self.kill_switch_active = False 
         self.start_time = 0
         self.initial_gems = 0
         self.avg_gems_per_hit = 14.0 
         self.last_notify_time = 0 
+        
+        # 讀取 VPN 設定檔
+        if not os.path.exists(CONFIG_DIR):
+            os.makedirs(CONFIG_DIR, exist_ok=True)
+        self.config_files = [f for f in os.listdir(CONFIG_DIR) if f.endswith('.ovpn')]
 
     def _decode_jwt(self, token):
         try:
@@ -80,22 +93,46 @@ class DuoGemNuclear:
         except: pass
 
     def trigger_kill_switch(self, reason):
-        """
-        核心防護機制：偵測到異常直接殺掉進程
-        """
         if self.kill_switch_active: return
         self.kill_switch_active = True
         self.is_running = False
-        
-        # 顯示與通知
-        print(f"\n{C.R}⛔ {reason} -> 觸發安全機制，立即終止！{C.E}")
-        
-        final_msg = f"⛔ 嚴重警告：偵測到異常\n💀 原因：{reason}\n🛑 動作：程式強制終止 (Exit 1)"
-        self.send_telegram(final_msg)
-        self.send_line(final_msg)
-        
-        # 強制退出
+        print(f"\n{C.R}⛔ {reason} -> 觸發重啟機制{C.E}")
+        # 這裡不發通知了，避免洗版，直接自殺讓 YAML 重啟
         os._exit(1)
+
+    def connect_random_vpn(self):
+        """啟動時隨機連線一個 VPN"""
+        if not self.config_files:
+            print(f"{C.R}❌ 錯誤：找不到 VPN 設定檔 (.ovpn){C.E}")
+            return # 無檔案則裸奔（不建議）
+
+        # 1. 先殺掉舊的 OpenVPN 進程
+        print(f"{C.Y}🧹 清理舊連線...{C.E}")
+        if IS_WINDOWS:
+            subprocess.run(["taskkill", "/F", "/IM", "openvpn.exe"], capture_output=True)
+        else:
+            subprocess.run(["sudo", "killall", "openvpn"], capture_output=True)
+        time.sleep(1)
+
+        # 2. 隨機選一個設定檔
+        config_name = random.choice(self.config_files)
+        print(f"{C.M}🛡️ 正在連線 VPN: {config_name}{C.E}")
+
+        # 3. 建立密碼檔
+        with open("vpn_auth.txt", "w") as f: 
+            f.write(f"{VPN_USER}\n{VPN_PASS}")
+        
+        # 4. 啟動
+        cmd = OPENVPN_CMD + ["--config", f"{CONFIG_DIR}/{config_name}", "--auth-user-pass", "vpn_auth.txt"]
+        if not IS_WINDOWS:
+            cmd.append("--daemon") # Linux 下背景執行
+        
+        subprocess.Popen(cmd, cwd=os.getcwd(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # 5. 等待連線生效 (10秒)
+        print(f"{C.C}⏳ 等待 IP 切換 (10s)...{C.E}")
+        time.sleep(10)
+        print(f"{C.G}✅ VPN 啟動完成，開始攻擊{C.E}")
 
     async def fetch_user_data(self, session):
         try:
@@ -104,15 +141,15 @@ class DuoGemNuclear:
                 gems = resp.json().get('gems', 0)
                 if self.initial_gems == 0: 
                     self.initial_gems = gems
-                    msg = f"🚀 機器人啟動成功！\n💎 初始寶石：{gems}"
-                    self.send_telegram(msg)
-                    self.send_line(msg)
+                    # 第一輪才通知，避免每90秒通知一次
+                    print(f"💎 初始寶石：{gems}")
                 return True
             elif resp.status_code in [403, 429]:
-                self.trigger_kill_switch(f"初始化被拒 (Status: {resp.status_code})")
+                self.trigger_kill_switch(f"開局被擋 (Status: {resp.status_code})")
                 return False
         except Exception as e:
-            print(f"初始化錯誤: {e}")
+            print(f"初始化連線錯誤: {e}")
+            self.trigger_kill_switch("網路連線失敗")
             return False
         return False
 
@@ -120,38 +157,22 @@ class DuoGemNuclear:
         if not self.is_running: return
         try:
             resp = await session.patch(url, headers=self.headers, json=payload, timeout=10)
-            
-            # [判定邏輯區]
             if resp.status_code == 200:
                 try:
-                    # 檢查是否為「假性成功」(200 OK 但沒獎勵)
                     data = resp.json()
                     reward = data.get('currencyReward')
-                    
-                    # 情況 A: 回傳資料中有 currencyReward 欄位且為 0 -> 軟封鎖/上限
                     if reward is not None and reward == 0:
-                        self.trigger_kill_switch("200 OK 但無獎勵 (收益為 0)")
+                        self.trigger_kill_switch("收益為 0 (軟封鎖)")
                         return
-                        
-                    # 情況 B: 成功
                     self.stats['success'] += 1
-                except:
-                    # JSON 解析失敗，通常是網路問題，暫時計入失敗但不退出，除非非常頻繁
-                    self.stats['failed'] += 1
-
+                except: self.stats['failed'] += 1
             elif resp.status_code in [403, 429]:
-                # 情況 C: 明確的封鎖代碼
-                self.trigger_kill_switch(f"偵測到封鎖 (Status: {resp.status_code})")
-            
-            else:
-                self.stats['failed'] += 1
-                
-        except Exception as e:
-            self.stats['failed'] += 1
+                self.trigger_kill_switch(f"封鎖 (Status: {resp.status_code})")
+            else: self.stats['failed'] += 1
+        except: self.stats['failed'] += 1
 
     async def attack_worker(self, worker_id, session, payload, batch, delay):
         url = f"{self.base_url}/{self.sub}/rewards/{self.reward_id}"
-        # 移除 vpn_lock 等待，全速執行直到 is_running 為 False
         while self.is_running:
             tasks = [self._send_patch(session, url, payload) for _ in range(batch)]
             await asyncio.gather(*tasks)
@@ -164,45 +185,27 @@ class DuoGemNuclear:
         
         while self.is_running:
             tw_time = datetime.now(timezone.utc) + timedelta(hours=8)
-            date_str = tw_time.strftime("%Y年%m月%d日")
-            week_str = week_days[tw_time.weekday()]
-            period = "早上" if tw_time.hour < 12 else "下午"
             time_str = tw_time.strftime("%I:%M分%S秒")
             
-            final_display = f"{date_str}{week_str}{period}{time_str}"
             elapsed = time.time() - self.start_time
             speed = self.stats['success'] / elapsed if elapsed > 0 else 0
             est_gained = int(self.stats['success'] * self.avg_gems_per_hit)
             current_gems = self.initial_gems + est_gained
             
-            if time.time() - self.last_notify_time > NOTIFY_INTERVAL:
-                hours, rem = divmod(elapsed, 3600)
-                minutes, seconds = divmod(rem, 60)
-                run_time_str = "{:0>2}時{:0>2}分{:0>2}秒".format(int(hours),int(minutes),int(seconds))
-                msg = (
-                    f"🟢 [分鐘報告] 執行中\n"
-                    f"⏰ {run_time_str}\n"
-                    f"💎 初始：{self.initial_gems}\n"
-                    f"💰 本次：+{est_gained}\n"
-                    f"🏆 總額：{current_gems}\n"
-                    f"⚡ 速度：{speed:.1f}/s"
-                )
-                self.send_telegram(msg)
+            # 每 50 秒通知一次 (配合 90 秒生命週期)
+            if time.time() - self.last_notify_time > 50:
+                msg = f"🟢 [機器人 #{BOT_ID}] 存活中\n💎 累積：+{est_gained}\n⚡ 速度：{speed:.1f}/s"
+                # self.send_telegram(msg) # 選擇性開啟，避免太吵
                 self.last_notify_time = time.time()
                 
-            sys.stdout.write(f"\r{C.TIME_ICON} {final_display} ({int(elapsed)}s) {C.SPEED_ICON} {speed:.1f}/s {C.SUCCESS_ICON} {self.stats['success']} {C.Y}💰 +{est_gained}{C.E}    ")
+            sys.stdout.write(f"\r{C.TIME_ICON} {time_str} ({int(elapsed)}s) {C.SPEED_ICON} {speed:.1f}/s {C.SUCCESS_ICON} {self.stats['success']} {C.Y}💰 +{est_gained}{C.E}    ")
             sys.stdout.flush()
             await asyncio.sleep(1)
 
-    async def cleanup(self):
-        # 只有正常結束（Ctrl+C）會走到這，異常會直接 os._exit
-        est_gained = int(self.stats['success'] * self.avg_gems_per_hit)
-        final_gems = self.initial_gems + est_gained
-        msg = f"🛑 任務手動停止\n💰 本次獲得：+{est_gained}\n🏆 最終總額：{final_gems}"
-        self.send_telegram(msg)
-        self.send_line(msg)
-
     async def start(self):
+        # 🟢 在開始任何連線前，先連上隨機 VPN
+        self.connect_random_vpn()
+        
         try:
             async with AsyncSession(impersonate="chrome120") as session:
                 if await self.fetch_user_data(session):
@@ -213,7 +216,7 @@ class DuoGemNuclear:
                     try: await asyncio.gather(*tasks)
                     except: pass
         finally:
-            await self.cleanup()
+            print("\n👋 本輪結束")
 
 if __name__ == "__main__":
     token = DEFAULT_TOKEN
