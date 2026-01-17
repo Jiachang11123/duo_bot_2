@@ -2,16 +2,13 @@ name: 24/7 Unlimited Nuclear
 
 on:
   schedule:
-    - cron: "0 */6 * * *" # 每 6 小時重啟一次
+    - cron: "0 */6 * * *" # 每 6 小時強制重啟一次
   workflow_dispatch:      # 允許手動按按鈕開始
 
 jobs:
   nuclear-attack:
     runs-on: ubuntu-latest
-    #strategy:
-      #fail-fast: false     # 即使其中一個機器人失敗，其他機器人也會繼續運行
-      #matrix:
-        #bot_id: [1, 2] # 定義 10 個機器人編號
+    # 這裡已經不需要 matrix 了，單一任務最穩
     permissions:
       contents: read
     
@@ -34,7 +31,7 @@ jobs:
 
       - name: Run Nuclear Bot
         env:
-          BOT_ID: ${{ matrix.bot_id }} # 將編號傳入 Python
+          BOT_ID: "1" # 🟢 修正：直接指定編號 1，不要用 matrix
           DUO_TOKEN: ${{ secrets.DUO_TOKEN }}
           VPN_USER: ${{ secrets.VPN_USER }}
           VPN_PASS: ${{ secrets.VPN_PASS }}
@@ -43,4 +40,6 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          timeout 350m python main-auto-vpn.py || true
+          # 👇 這是神風模式的核心：無限復活
+          # 當 Python 自殺退出時，這裡會馬上接手，休息 2 秒後立刻重啟
+          timeout 350m bash -c "while true; do python main-auto-vpn.py; echo '♻️ 墜機重啟中...'; sleep 2; done" || true
