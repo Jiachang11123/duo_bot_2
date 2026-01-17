@@ -1,17 +1,18 @@
-name: 24/7 Unlimited Nuclear
+Name: 24/7 Unlimited Nuclear
 
 on:
   schedule:
-    - cron: "0 */6 * * *" # 每 6 小時重啟一次
+    - cron: "0 */6 * * *" # 保持每 6 小時啟動一次 Workflow (最穩定)
   workflow_dispatch:      # 允許手動按按鈕開始
 
 jobs:
   nuclear-attack:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false     # 即使其中一個機器人失敗，其他機器人也會繼續運行
+      fail-fast: false
       matrix:
-        bot_id: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] # 定義 10 個機器人編號
+        # 注意：機器人數量越多，消耗的 GitHub Actions 分鐘數越快，請自行斟酌
+        bot_id: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] 
     permissions:
       contents: read
     
@@ -32,9 +33,9 @@ jobs:
           pip install -r requirements.txt || true
           pip install curl_cffi colorama
 
-      - name: Run Nuclear Bot
+      - name: Run Nuclear Bot (Loop 90s)
         env:
-          BOT_ID: ${{ matrix.bot_id }} # 將編號傳入 Python
+          BOT_ID: ${{ matrix.bot_id }}
           DUO_TOKEN: ${{ secrets.DUO_TOKEN }}
           VPN_USER: ${{ secrets.VPN_USER }}
           VPN_PASS: ${{ secrets.VPN_PASS }}
@@ -43,4 +44,19 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          timeout 350m python main-auto-vpn.py || true
+          # 設定總運行時間為 21000 秒 (約 5.8 小時，預留緩衝給 GitHub 強制結束)
+          end=$((SECONDS+21000))
+          
+          echo "🔄 開始循環模式：每 90 秒重啟一次腳本..."
+          
+          while [ $SECONDS -lt $end ]; do
+            echo "----------------------------------------"
+            echo "🚀 [Bot #${BOT_ID}] 啟動新一輪 (限時 90 秒)..."
+            
+            # 這裡設定 timeout 90s，時間一到會強制殺掉 Python 並執行下一次迴圈
+            # 如果 Python 因為封鎖自己退出了 (exit 1)，也會立刻執行下一次
+            timeout 90s python main-auto-vpn.py || true
+            
+            echo "💤 冷卻 2 秒..."
+            sleep 2
+          done
