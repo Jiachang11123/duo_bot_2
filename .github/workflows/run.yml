@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false     # 即使其中一個機器人失敗，其他機器人也會繼續運行
       matrix:
-        bot_id: [1, 2, 3, 4, 5] # 定義 10 個機器人編號
+        bot_id: [1, 2] # 定義 10 個機器人編號
     permissions:
       contents: read
     
