@@ -51,8 +51,8 @@ DEFAULT_BATCH = 50      # 單次搬運量大
 DEFAULT_DELAY = 1.0     # 間隔 1 秒
 
 # 🛡️ 熔斷保護設定 (核心關鍵)
-SAFE_LIMIT = 35000      # 刷到 3.5 萬分就停 (避開 4萬分 封鎖線)
-REST_TIME = 300         # 強制休息 5 分鐘 (讓伺服器冷卻)
+SAFE_LIMIT = 40000      # 刷到 3.5 萬分就停 (避開 4萬分 封鎖線)
+REST_TIME = 180         # 強制休息 5 分鐘 (讓伺服器冷卻)
 
 NOTIFY_INTERVAL = 1800  # 30分鐘通知
 
