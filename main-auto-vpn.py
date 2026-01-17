@@ -37,7 +37,7 @@ if IS_WINDOWS: OPENVPN_CMD = [r"C:\Program Files\OpenVPN\bin\openvpn.exe"]
 else: OPENVPN_CMD = ["sudo", "openvpn"]
 
 # ⚠️ 請確認這是你的 SKILL ID
-MAGIC_ID = "SKILL_COMPLETION_BALANCED-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx-1-GEMS"
+MAGIC_ID = "SKILL_COMPLETION_BALANCED-…-2-GEMS"
 
 # ==========================================
 # ☠️ 神風特攻模式 (Kamikaze Mode)
