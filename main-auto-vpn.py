@@ -11,20 +11,22 @@ import requests
 import signal
 from datetime import datetime, timedelta, timezone
 
-# --- [極致霓虹配色] ---
+# --- [極致霓虹配色 UI] ---
 class C:
     E, R, G, Y, B, M, C, W = '\033[0m', '\033[91m', '\033[92m', '\033[93m', '\033[94m', '\033[95m', '\033[96m', '\033[97m'
     BOLD = '\033[1m'
     SUCCESS_ICON, FAIL_ICON = f"{BOLD}{G}✔{E}", f"{BOLD}{R}✘{E}"
     SPEED_ICON, TIME_ICON, GEM_ICON = f"{BOLD}{C}⚡{E}", f"{BOLD}{Y}⏰{E}", f"{BOLD}{M}🟣{E}"
 
-# --- [1] 設定區域 ---
+# --- [1] 智慧設定區域 ---
 BOT_ID = os.environ.get("BOT_ID", "1")
 VPN_USER = os.environ.get("VPN_USER", "aFwROLMWIY5ljknZ") 
 VPN_PASS = os.environ.get("VPN_PASS", "XlNXBom0tFVNFp3GNH58xDJASRoxOr8m")
 DEFAULT_TOKEN = os.environ.get("DUO_TOKEN", "")
+
 LINE_ACCESS_TOKEN = os.environ.get("LINE_ACCESS_TOKEN", "") 
 LINE_USER_ID = os.environ.get("LINE_USER_ID", "")
+
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
@@ -34,7 +36,7 @@ CONFIG_DIR = "./vpn_configs"
 if IS_WINDOWS: OPENVPN_CMD = [r"C:\Program Files\OpenVPN\bin\openvpn.exe"]
 else: OPENVPN_CMD = ["sudo", "openvpn"]
 
-# ⚠️ 確認 MAGIC ID
+# ⚠️ 請確認這是你的 SKILL ID
 MAGIC_ID = "SKILL_COMPLETION_BALANCED-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx-1-GEMS"
 
 # ==========================================
@@ -42,8 +44,8 @@ MAGIC_ID = "SKILL_COMPLETION_BALANCED-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx-1-GEM
 # ==========================================
 DEFAULT_THREADS = 40    # 暴力多開
 DEFAULT_BATCH = 100     # 單次最大搬運
-DEFAULT_DELAY = 0       # 0秒延遲
-NOTIFY_INTERVAL = 300   # 5分鐘報告
+DEFAULT_DELAY = 0       # 0秒延遲，全速轟炸
+NOTIFY_INTERVAL = 300   # 5分鐘報告一次
 
 class DuoGemNuclear:
     def __init__(self, token, reward_id):
@@ -74,6 +76,16 @@ class DuoGemNuclear:
             return json.loads(base64.urlsafe_b64decode(payload))['sub']
         except: return "Unknown"
 
+    def send_line(self, message):
+        if not LINE_ACCESS_TOKEN or not LINE_USER_ID: return
+        msg_with_id = f"🤖 [神風 #{BOT_ID}]\n{message}"
+        try:
+            url = 'https://api.line.me/v2/bot/message/push'
+            headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {LINE_ACCESS_TOKEN}'}
+            data = {"to": LINE_USER_ID, "messages": [{"type": "text", "text": msg_with_id}]}
+            requests.post(url, headers=headers, json=data, timeout=5)
+        except: pass
+
     def send_telegram(self, message):
         if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID: return
         msg_with_id = f"🤖 [神風 #{BOT_ID}]\n{message}"
@@ -83,20 +95,20 @@ class DuoGemNuclear:
             requests.post(url, json=data, timeout=5)
         except: pass
 
-    # 🟢 [關鍵修正] 改用 os._exit(1) 強制拔插頭
+    # 🟢 [神風核心] 遇到封鎖直接拔插頭 (os._exit)
     async def suicide_restart(self):
         print(f"\n{C.R}💀 偵測到封鎖 (429)！執行戰術重啟...{C.E}")
         if IS_WINDOWS: subprocess.run(["taskkill", "/F", "/IM", "openvpn.exe"], capture_output=True)
         else: subprocess.run(["sudo", "killall", "openvpn"], capture_output=True)
         
-        # 👇 這裡改了！強制結束進程，不讓 except 攔截
+        # 強制瞬殺，不讓 except 攔截
         os._exit(1) 
 
-    # 🟢 每次啟動都換一個新 VPN
+    # 🟢 啟動時隨機連線 VPN
     async def connect_random_vpn(self):
-        if not self.config_files: os._exit(1) # 沒檔也直接殺
+        if not self.config_files: os._exit(1)
         config_name = random.choice(self.config_files)
-        print(f"{C.M}🛡️ [戰術突擊] 載入新節點: {config_name}...{C.E}")
+        print(f"{C.M}🛡️ [戰術突擊] 載入節點: {config_name}...{C.E}")
 
         if IS_WINDOWS: subprocess.run(["taskkill", "/F", "/IM", "openvpn.exe"], capture_output=True)
         else: subprocess.run(["sudo", "killall", "openvpn"], capture_output=True)
@@ -115,7 +127,11 @@ class DuoGemNuclear:
             resp = await session.get(f"{self.base_url}/{self.sub}?fields=gems", headers=self.headers, timeout=5)
             if resp.status_code == 200:
                 gems = resp.json().get('gems', 0)
-                if self.initial_gems == 0: self.initial_gems = gems
+                if self.initial_gems == 0: 
+                    self.initial_gems = gems
+                    msg = f"🚀 神風小隊出動！\n💎 初始寶石：{gems}"
+                    # self.send_telegram(msg)
+                    # self.send_line(msg)
                 return True
             else:
                 await self.suicide_restart()
@@ -128,9 +144,12 @@ class DuoGemNuclear:
         try:
             if self.vpn_lock.locked(): return
             resp = await session.patch(url, headers=self.headers, json=payload, timeout=5)
-            if 200 <= resp.status_code < 300: self.stats['success'] += 1
-            else: await self.suicide_restart() 
-        except: await self.suicide_restart()
+            if 200 <= resp.status_code < 300: 
+                self.stats['success'] += 1
+            else: 
+                await self.suicide_restart()
+        except: 
+            await self.suicide_restart()
 
     async def attack_worker(self, worker_id, session, payload, batch, delay):
         url = f"{self.base_url}/{self.sub}/rewards/{self.reward_id}"
@@ -142,17 +161,38 @@ class DuoGemNuclear:
     async def monitor_loop(self, session):
         self.start_time = time.time()
         self.last_notify_time = time.time()
+        week_days = ["(一)", "(二)", "(三)", "(四)", "(五)", "(六)", "(日)"]
+        
         while self.is_running:
+            tw_time = datetime.now(timezone.utc) + timedelta(hours=8)
+            date_str = tw_time.strftime("%Y年%m月%d日")
+            week_str = week_days[tw_time.weekday()]
+            period = "早上" if tw_time.hour < 12 else "下午"
+            time_str = tw_time.strftime("%I:%M分%S秒")
+            final_display = f"{date_str}{week_str}{period}{time_str}"
+            
             elapsed = time.time() - self.start_time
             speed = self.stats['success'] / elapsed if elapsed > 0 else 0
             est_gained = int(self.stats['success'] * self.avg_gems_per_hit)
+            current_gems = self.initial_gems + est_gained
             
             if time.time() - self.last_notify_time > NOTIFY_INTERVAL:
-                msg = f"🔥 [戰況] 激戰中\n💰 掠奪: +{est_gained}\n⚡ 速度: {speed:.1f}/s"
+                hours, rem = divmod(elapsed, 3600)
+                minutes, seconds = divmod(rem, 60)
+                run_time_str = "{:0>2}時{:0>2}分{:0>2}秒".format(int(hours),int(minutes),int(seconds))
+                
+                msg = (
+                    f"🔥 [神風報告] 激戰中\n"
+                    f"⏰ {run_time_str}\n"
+                    f"💰 本次: +{est_gained}\n"
+                    f"🏆 總額: {current_gems}\n"
+                    f"⚡ 速度: {speed:.1f}/s"
+                )
                 self.send_telegram(msg)
+                self.send_line(msg)
                 self.last_notify_time = time.time()
 
-            sys.stdout.write(f"\r{C.SPEED_ICON} {speed:.1f}/s {C.SUCCESS_ICON} {self.stats['success']} {C.Y}💰 +{est_gained}{C.E}    ")
+            sys.stdout.write(f"\r{C.TIME_ICON} {final_display} ({int(elapsed)}s) {C.SPEED_ICON} {speed:.1f}/s {C.SUCCESS_ICON} {self.stats['success']} {C.GEM_ICON} +{est_gained}{C.E}    ")
             sys.stdout.flush()
             await asyncio.sleep(1)
 
@@ -172,6 +212,9 @@ class DuoGemNuclear:
 
 if __name__ == "__main__":
     token = DEFAULT_TOKEN
+    if "xxxx" in MAGIC_ID or "SKILL_COMPLETION" not in MAGIC_ID:
+        print(f"{C.R}⚠️ 警告：請記得修改代碼中的 MAGIC_ID！{C.E}")
+
     try: 
         bot = DuoGemNuclear(token, MAGIC_ID)
         asyncio.run(bot.start())
