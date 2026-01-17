@@ -8,7 +8,7 @@ on:
 jobs:
   nuclear-attack:
     runs-on: ubuntu-latest
-    # 這裡已經不需要 matrix 了，單一任務最穩
+    # ❌ strategy 區塊已經完全移除了，這樣才乾淨
     permissions:
       contents: read
     
@@ -31,7 +31,7 @@ jobs:
 
       - name: Run Nuclear Bot
         env:
-          BOT_ID: "1" # 🟢 修正：直接指定編號 1，不要用 matrix
+          BOT_ID: "1"  # 🟢 修正重點：這裡直接寫 "1"，不要再寫 matrix 了
           DUO_TOKEN: ${{ secrets.DUO_TOKEN }}
           VPN_USER: ${{ secrets.VPN_USER }}
           VPN_PASS: ${{ secrets.VPN_PASS }}
@@ -40,6 +40,6 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          # 👇 這是神風模式的核心：無限復活
-          # 當 Python 自殺退出時，這裡會馬上接手，休息 2 秒後立刻重啟
+          # 👇 神風模式核心：無限復活迴圈
+          # 當 Python 自殺時，這裡會休息 2 秒然後馬上重啟
           timeout 350m bash -c "while true; do python main-auto-vpn.py; echo '♻️ 墜機重啟中...'; sleep 2; done" || true
