@@ -39,13 +39,13 @@ if IS_WINDOWS:
 else:
     OPENVPN_CMD = ["sudo", "openvpn"]
 
-# ⚠️ 請確認這是你的 SKILL ID
+# ⚠️ 請確認這是你的 SKILL ID (記得填入真正的那串 ID)
 MAGIC_ID = "SKILL_COMPLETION_BALANCED-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx-1-GEMS"
 
 # ==========================================
-# ⚡ 黃金參數 (Golden Settings) - 不要亂改！
+# ⚡ 黃金參數 (Golden Settings) - 這是安全極限！
 # ==========================================
-DEFAULT_THREADS = 7    # 這是單帳號極限，開 100 必死
+DEFAULT_THREADS = 7    # 絕對不要設成 100，7 是極限
 DEFAULT_BATCH = 45     # 單次批量
 DEFAULT_DELAY = 0.15   # 請求間隔 (秒)
 NOTIFY_INTERVAL = 1800 # 30分鐘報告一次
@@ -105,14 +105,14 @@ class DuoGemNuclear:
             subprocess.run(["taskkill", "/F", "/IM", "openvpn.exe"], capture_output=True)
         else:
             subprocess.run(["sudo", "killall", "openvpn"], capture_output=True)
-        sys.exit(1) # 退出程式
+        sys.exit(1) # 退出程式，觸發 GitHub 迴圈
 
     # 🟢 啟動時連線 VPN
     async def connect_random_vpn(self):
         if not self.config_files:
             print(f"\n{C.R}❌ 嚴重錯誤：找不到 .ovpn 檔案！{C.E}")
             print(f"{C.R}請檢查 GitHub Secret 的 VPN_ZIP 是否正確。{C.E}")
-            sys.exit(1) # 沒 VPN 絕對不能跑
+            sys.exit(1) 
 
         config_name = random.choice(self.config_files)
         print(f"{C.M}🛡️ [啟動] 正在連線至 VPN: {config_name}...{C.E}")
