@@ -11,7 +11,7 @@ import requests
 
 # --- [設定區] ---
 # ⚠️ 請填入你現在用的那個 ID
-MAGIC_ID = "SKILL_COMPLETION_BALANCED-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx-1-GEMS"
+MAGIC_ID = "SKILL_COMPLETION_BALANCED-…-2-GEMS"
 
 BOT_ID = os.environ.get("BOT_ID", "1")
 VPN_USER = os.environ.get("VPN_USER", "aFwROLMWIY5ljknZ") 
