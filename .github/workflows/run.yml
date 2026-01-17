@@ -19,12 +19,31 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Restore VPN Configs
+     - name: Restore VPN Configs
+        env:
+          VPN_ZIP_CONTENT: ${{ secrets.VPN_ZIP }}
         run: |
-          echo "${{ secrets.VPN_ZIP }}" | tr '-_' '+/' | base64 -d > vpn_configs.zip
+          # 使用 Python 進行容錯解碼 (自動修正符號 + 自動補齊 Padding)
+          python3 -c "
+          import os, base64, sys
+          try:
+              # 讀取並清理資料
+              s = os.environ['VPN_ZIP_CONTENT'].strip()
+              # 1. 替換 URL 安全符號 (-_ -> +/)
+              s = s.replace('-', '+').replace('_', '/')
+              # 2. 自動補齊遺失的 Padding (=)
+              s += '=' * (-len(s) % 4)
+              # 3. 解碼並寫入檔案
+              with open('vpn_configs.zip', 'wb') as f:
+                  f.write(base64.b64decode(s))
+              print('✅ Base64 解碼成功！')
+          except Exception as e:
+              print(f'❌ 解碼失敗: {e}')
+              sys.exit(1)
+          "
           unzip vpn_configs.zip -d .
           ls -R vpn_configs
-
+          
       - name: Install OpenVPN & Python
         run: |
           sudo apt-get update
