@@ -2,13 +2,12 @@ name: 24/7 Unlimited Nuclear
 
 on:
   schedule:
-    - cron: "0 */6 * * *" # 每 6 小時強制重啟一次
-  workflow_dispatch:      # 允許手動按按鈕開始
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
 
 jobs:
   nuclear-attack:
     runs-on: ubuntu-latest
-    # ❌ strategy 區塊已經完全移除了，這樣才乾淨
     permissions:
       contents: read
     
@@ -20,7 +19,6 @@ jobs:
         run: |
           echo "${{ secrets.VPN_ZIP }}" | base64 -d > vpn_configs.zip
           unzip vpn_configs.zip -d .
-          ls -R vpn_configs
 
       - name: Install OpenVPN & Python
         run: |
@@ -31,7 +29,8 @@ jobs:
 
       - name: Run Nuclear Bot
         env:
-          BOT_ID: "1"  # 🟢 修正重點：這裡直接寫 "1"，不要再寫 matrix 了
+          # 👇 這裡一定要改！不能用 ${{ matrix.bot_id }}
+          BOT_ID: "1"
           DUO_TOKEN: ${{ secrets.DUO_TOKEN }}
           VPN_USER: ${{ secrets.VPN_USER }}
           VPN_PASS: ${{ secrets.VPN_PASS }}
@@ -40,6 +39,5 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          # 👇 神風模式核心：無限復活迴圈
-          # 當 Python 自殺時，這裡會休息 2 秒然後馬上重啟
+          # 無限復活迴圈
           timeout 350m bash -c "while true; do python main-auto-vpn.py; echo '♻️ 墜機重啟中...'; sleep 2; done" || true
