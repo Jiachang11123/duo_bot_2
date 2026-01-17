@@ -19,7 +19,7 @@ class C:
     SPEED_ICON, TIME_ICON, GEM_ICON = f"{BOLD}{C}⚡{E}", f"{BOLD}{Y}⏰{E}", f"{BOLD}{M}🟣{E}"
 
 # --- [1] 智慧設定區域 ---
-BOT_ID = os.environ.get("BOT_ID", "1") # 讀取編號
+BOT_ID = os.environ.get("BOT_ID", "1")
 VPN_USER = os.environ.get("VPN_USER", "aFwROLMWIY5ljknZ") 
 VPN_PASS = os.environ.get("VPN_PASS", "XlNXBom0tFVNFp3GNH58xDJASRoxOr8m")
 DEFAULT_TOKEN = os.environ.get("DUO_TOKEN", "")
@@ -30,7 +30,7 @@ LINE_USER_ID = os.environ.get("LINE_USER_ID", "")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-# ... (中間路徑判斷與攻擊設定維持原樣) ...
+# --- [2] 系統路徑判斷 ---
 IS_WINDOWS = sys.platform == 'win32'
 CONFIG_DIR = "./vpn_configs"
 
@@ -39,15 +39,25 @@ if IS_WINDOWS:
 else:
     OPENVPN_CMD = ["sudo", "openvpn"]
 
-MAGIC_ID = "SKILL_COMPLETION_BALANCED-…-2-GEMS"
-DEFAULT_THREADS = 1
-DEFAULT_BATCH = 50
-DEFAULT_DELAY = 1.5
-NOTIFY_INTERVAL = 60
+# ⚠️ 請確認這是你的 SKILL ID
+MAGIC_ID = "SKILL_COMPLETION_BALANCED-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx-1-GEMS"
+
+# ==========================================
+# 🚀 智能巡航模式 (Smart Cruise)
+# ==========================================
+# 速度設定：稍微快一點，因為我們有熔斷保護了
+DEFAULT_THREADS = 5     # 5 線程 (效率與安全的平衡)
+DEFAULT_BATCH = 50      # 單次搬運量大
+DEFAULT_DELAY = 1.0     # 間隔 1 秒
+
+# 🛡️ 熔斷保護設定 (核心關鍵)
+SAFE_LIMIT = 35000      # 刷到 3.5 萬分就停 (避開 4萬分 封鎖線)
+REST_TIME = 300         # 強制休息 5 分鐘 (讓伺服器冷卻)
+
+NOTIFY_INTERVAL = 1800  # 30分鐘通知
 
 class DuoGemNuclear:
     def __init__(self, token, reward_id):
-        # ... (初始化內容維持原樣) ...
         self.token = token
         self.reward_id = reward_id
         self.headers = {
@@ -61,14 +71,16 @@ class DuoGemNuclear:
         self.is_running = True
         self.start_time = 0
         self.initial_gems = 0
-        self.avg_gems_per_hit = 14.0 
+        self.avg_gems_per_hit = 15.0
         self.vpn_lock = asyncio.Lock()
         self.last_notify_time = 0 
+        
+        # 用來記錄這一輪刷了多少，用於熔斷判斷
+        self.session_gained = 0
         
         if not os.path.exists(CONFIG_DIR):
             os.makedirs(CONFIG_DIR, exist_ok=True)
         self.config_files = [f for f in os.listdir(CONFIG_DIR) if f.endswith('.ovpn')]
-        self.config_index = 0
 
     def _decode_jwt(self, token):
         try:
@@ -78,57 +90,58 @@ class DuoGemNuclear:
 
     def send_line(self, message):
         if not LINE_ACCESS_TOKEN or not LINE_USER_ID: return
-        # 加入編號
         msg_with_id = f"🤖 [機器人 #{BOT_ID}]\n{message}"
         try:
             url = 'https://api.line.me/v2/bot/message/push'
             headers = {'Content-Type': 'application/json', 'Authorization': f'Bearer {LINE_ACCESS_TOKEN}'}
             data = {"to": LINE_USER_ID, "messages": [{"type": "text", "text": msg_with_id}]}
-            requests.post(url, headers=headers, json=data)
+            requests.post(url, headers=headers, json=data, timeout=5)
         except: pass
 
     def send_telegram(self, message):
         if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID: return
-        # 加入編號
         msg_with_id = f"🤖 [機器人 #{BOT_ID}]\n{message}"
         try:
             url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
             data = {"chat_id": TELEGRAM_CHAT_ID, "text": msg_with_id}
-            requests.post(url, json=data)
+            requests.post(url, json=data, timeout=5)
         except: pass
 
-    # ... (其餘 rotate_vpn, attack_worker, monitor_loop 等函式維持原樣不動) ...
-    async def rotate_vpn(self):
-        if self.vpn_lock.locked(): return
-        async with self.vpn_lock:
-            tw_now = datetime.now(timezone.utc) + timedelta(hours=8)
-            time_tag = tw_now.strftime("%H:%M:%S")
-            print(f"\n[{time_tag}] {C.M}🛡️ 正在切換 IP...{C.E}")
-            self.send_telegram(f"🛡️ 偵測到連線受阻\n⏰ 時間：{time_tag}\n⚙️ 正在切換 IP...")
-            try:
-                if IS_WINDOWS:
-                    subprocess.run(["taskkill", "/F", "/IM", "openvpn.exe"], capture_output=True)
-                else:
-                    subprocess.run(["sudo", "killall", "openvpn"], capture_output=True)
-                await asyncio.sleep(2)
-                if not self.config_files:
-                    print("❌ 無設定檔")
-                    self.send_telegram("❌ 錯誤：找不到 VPN 設定檔！")
-                    return
-                config_name = self.config_files[self.config_index]
-                self.config_index = (self.config_index + 1) % len(self.config_files)
-                with open("vpn_auth.txt", "w") as f: f.write(f"{VPN_USER}\n{VPN_PASS}")
-                cmd = OPENVPN_CMD + ["--config", f"{CONFIG_DIR}/{config_name}", "--auth-user-pass", "vpn_auth.txt"]
-                if not IS_WINDOWS:
-                    cmd.append("--daemon")
-                subprocess.Popen(cmd, cwd=os.getcwd(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                print(f"{C.C}🌐 連線目標：{config_name}{C.E}")
-                await asyncio.sleep(15)
-                print(f"{C.G}✅ 網路重連完成{C.E}")
-                self.send_telegram(f"✅ IP 切換成功！\n🌐 新節點：{config_name}\n🚀 繼續刷分中...")
-            except Exception as e:
-                print(f"{C.R}❌ VPN 錯誤：{e}{C.E}")
-                self.send_telegram(f"❌ VPN 切換失敗：{e}")
+    # 🟢 [核心邏輯] 遇到封鎖直接自殺
+    async def suicide_restart(self):
+        print(f"\n{C.R}💀 偵測到封鎖 (403/429)！執行自殺式重啟...{C.E}")
+        if IS_WINDOWS:
+            subprocess.run(["taskkill", "/F", "/IM", "openvpn.exe"], capture_output=True)
+        else:
+            subprocess.run(["sudo", "killall", "openvpn"], capture_output=True)
+        sys.exit(1)
+
+    # 🟢 啟動時連線 VPN
+    async def connect_random_vpn(self):
+        if not self.config_files:
+            print(f"\n{C.R}❌ 嚴重錯誤：找不到 .ovpn 檔案！{C.E}")
+            sys.exit(1)
+
+        config_name = random.choice(self.config_files)
+        print(f"{C.M}🛡️ [啟動] 正在連線至 VPN: {config_name}...{C.E}")
+
+        if IS_WINDOWS: subprocess.run(["taskkill", "/F", "/IM", "openvpn.exe"], capture_output=True)
+        else: subprocess.run(["sudo", "killall", "openvpn"], capture_output=True)
+        
+        await asyncio.sleep(2)
+        
+        with open("vpn_auth.txt", "w") as f: f.write(f"{VPN_USER}\n{VPN_PASS}")
+        
+        cmd = OPENVPN_CMD + ["--config", f"{CONFIG_DIR}/{config_name}", "--auth-user-pass", "vpn_auth.txt"]
+        if not IS_WINDOWS: cmd.append("--daemon")
+        
+        subprocess.Popen(cmd, cwd=os.getcwd(), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        for i in range(15, 0, -1):
+            sys.stdout.write(f"\r⏳ 等待 VPN 連線... {i}s ")
+            sys.stdout.flush()
+            await asyncio.sleep(1)
+        print(f"\n{C.G}✅ VPN 連線完成！{C.E}")
 
     async def fetch_user_data(self, session):
         try:
@@ -137,38 +150,44 @@ class DuoGemNuclear:
                 gems = resp.json().get('gems', 0)
                 if self.initial_gems == 0: 
                     self.initial_gems = gems
-                    msg = f"🚀 機器人啟動成功！\n💎 初始寶石：{gems}"
-                    self.send_telegram(msg)
-                    self.send_line(msg)
+                    msg = f"🚀 機器人啟動成功 (重啟)\n💎 初始寶石：{gems}"
+                    # self.send_telegram(msg)
                 return True
             elif resp.status_code in [403, 429]:
-                await self.rotate_vpn()
+                await self.suicide_restart()
                 return False
         except:
-            await self.rotate_vpn()
+            await self.suicide_restart()
         return False
 
     async def _send_patch(self, session, url, payload):
         try:
+            # 如果正在休息 (鎖定中)，就不發送請求
             if self.vpn_lock.locked(): return
+            
             resp = await session.patch(url, headers=self.headers, json=payload, timeout=10)
             if 200 <= resp.status_code < 300: self.stats['success'] += 1
-            elif resp.status_code in [403, 429]: await self.rotate_vpn()
+            elif resp.status_code in [403, 429]: await self.suicide_restart()
             else: self.stats['failed'] += 1
         except: self.stats['failed'] += 1
 
     async def attack_worker(self, worker_id, session, payload, batch, delay):
         url = f"{self.base_url}/{self.sub}/rewards/{self.reward_id}"
         while self.is_running:
+            # 檢查是否在休息中
             if not self.vpn_lock.locked():
                 tasks = [self._send_patch(session, url, payload) for _ in range(batch)]
                 await asyncio.gather(*tasks)
                 await asyncio.sleep(delay)
-            else: await asyncio.sleep(5)
+            else:
+                # 休息中，暫停 5 秒再檢查
+                await asyncio.sleep(5)
 
     async def monitor_loop(self, session):
         self.start_time = time.time()
         self.last_notify_time = time.time()
+        self.session_gained = 0 # 重置當前會話收益
+
         week_days = ["(一)", "(二)", "(三)", "(四)", "(五)", "(六)", "(日)"]
         while self.is_running:
             tw_time = datetime.now(timezone.utc) + timedelta(hours=8)
@@ -177,36 +196,64 @@ class DuoGemNuclear:
             period = "早上" if tw_time.hour < 12 else "下午"
             time_str = tw_time.strftime("%I:%M分%S秒")
             final_display = f"{date_str}{week_str}{period}{time_str}"
+            
             elapsed = time.time() - self.start_time
             speed = self.stats['success'] / elapsed if elapsed > 0 else 0
-            est_gained = int(self.stats['success'] * self.avg_gems_per_hit)
-            current_gems = self.initial_gems + est_gained
+            
+            # 計算當前總收益
+            current_total_gained = int(self.stats['success'] * self.avg_gems_per_hit)
+            
+            # 👇👇👇 智能熔斷判斷 👇👇👇
+            # 如果 (目前總收益 - 上次休息後的收益) >= 安全極限
+            if current_total_gained - self.session_gained >= SAFE_LIMIT:
+                print(f"\n{C.Y}☕ 達到安全極限 ({SAFE_LIMIT})，觸發主動休息 {REST_TIME} 秒...{C.E}")
+                self.send_telegram(f"☕ 觸發熔斷保護 (已刷 {SAFE_LIMIT} 分)，休息 {int(REST_TIME/60)} 分鐘...")
+                
+                # 鎖住 VPN 鎖，讓所有 worker 暫停
+                async with self.vpn_lock:
+                    # 顯示倒數計時
+                    for i in range(REST_TIME, 0, -1):
+                        sys.stdout.write(f"\r💤 休息中... 剩餘 {i} 秒   ")
+                        sys.stdout.flush()
+                        await asyncio.sleep(1)
+                
+                # 休息結束，更新基準點
+                self.session_gained = current_total_gained
+                print(f"\n{C.G}▶️ 休息結束，繼續刷分！{C.E}")
+                self.send_telegram("▶️ 體力恢復，繼續刷分")
+            # 👆👆👆 判斷結束 👆👆👆
+
             if time.time() - self.last_notify_time > NOTIFY_INTERVAL:
-                hours, rem = divmod(elapsed, 3600)
-                minutes, seconds = divmod(rem, 60)
-                run_time_str = "{:0>2}時{:0>2}分{:0>2}秒".format(int(hours),int(minutes),int(seconds))
+                hours = int(elapsed / 3600)
                 msg = (
-                    f"🟢 [分鐘報告] 執行中\n"
-                    f"⏰ {run_time_str}\n"
-                    f"💎 初始：{self.initial_gems}\n"
-                    f"💰 本次：+{est_gained}\n"
-                    f"🏆 總額：{current_gems}\n"
-                    f"⚡ 速度：{speed:.1f}/s"
+                    f"🟢 [定期報告] 執行中\n"
+                    f"⏱️ 運行: {hours}小時\n"
+                    f"💰 本次: +{current_total_gained}\n"
+                    f"⚡ 速度: {speed:.1f}/s"
                 )
                 self.send_telegram(msg)
+                self.send_line(msg)
                 self.last_notify_time = time.time()
-            sys.stdout.write(f"\r{C.TIME_ICON} {final_display} ({int(elapsed)}s) {C.SPEED_ICON} {speed:.1f}/s {C.SUCCESS_ICON} {self.stats['success']} {C.Y}💰 +{est_gained}{C.E}    ")
-            sys.stdout.flush()
+
+            # 顯示狀態列 (如果沒在休息)
+            if not self.vpn_lock.locked():
+                sys.stdout.write(f"\r{C.TIME_ICON} {final_display} ({int(elapsed)}s) {C.SPEED_ICON} {speed:.1f}/s {C.SUCCESS_ICON} {self.stats['success']} {C.Y}💰 +{current_total_gained}{C.E}    ")
+                sys.stdout.flush()
+            
             await asyncio.sleep(1)
 
     async def cleanup(self):
         est_gained = int(self.stats['success'] * self.avg_gems_per_hit)
-        final_gems = self.initial_gems + est_gained
-        msg = f"🛑 任務結束 (或中斷)\n💰 本次獲得：+{est_gained}\n🏆 最終總額：{final_gems}"
-        self.send_telegram(msg)
-        self.send_line(msg)
+        print(f"\n🛑 任務結束 (準備重啟...)\n💰 本次獲得：+{est_gained}")
 
     async def start(self):
+        # 🟢 啟動前隨機冷卻 5~15 秒
+        wait_time = random.randint(5, 15)
+        print(f"⏳ 啟動冷卻中... ({wait_time}s)")
+        await asyncio.sleep(wait_time)
+        
+        await self.connect_random_vpn()
+        
         try:
             async with AsyncSession(impersonate="chrome120") as session:
                 if await self.fetch_user_data(session):
@@ -221,6 +268,9 @@ class DuoGemNuclear:
 
 if __name__ == "__main__":
     token = DEFAULT_TOKEN
+    if "xxxx" in MAGIC_ID or "SKILL_COMPLETION" not in MAGIC_ID:
+        print(f"{C.R}⚠️ 警告：請記得修改代碼中的 MAGIC_ID！{C.E}")
+
     try: 
         bot = DuoGemNuclear(token, MAGIC_ID)
         def signal_handler(sig, frame): bot.is_running = False
