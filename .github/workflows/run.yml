@@ -42,5 +42,7 @@ jobs:
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          timeout 350m python main-auto-vpn.py || true
+       run: |
+          # 👇 這裡改成了「無限復活迴圈」
+          # 如果 python 程式結束 (exit)，它會等待 5 秒然後自動重新執行
+          timeout 350m bash -c "while true; do python main-auto-vpn.py; echo '⚠️ 偵測到程式退出，5秒後重啟...'; sleep 5; done" || true
