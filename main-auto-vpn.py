@@ -100,44 +100,67 @@ class DuoGemNuclear:
     async def rotate_vpn(self, session):
         if self.vpn_lock.locked(): return
         async with self.vpn_lock:
-            tw_now = datetime.now(timezone.utc) + timedelta(hours=8)
-            time_tag = tw_now.strftime("%H:%M:%S")
-            print(f"\n[{time_tag}] {C.M}🛡️ 正在切換 IP...{C.E}")
-            self.send_telegram(f"🛡️ 偵測到連線受阻\n⏰ 時間：{time_tag}\n⚙️ 正在切換 IP...")
-            try:
-                if IS_WINDOWS:
-                    subprocess.run(["taskkill", "/F", "/IM", "openvpn.exe"], capture_output=True)
-                else:
-                    subprocess.run(["sudo", "killall", "openvpn"], capture_output=True)
-                await asyncio.sleep(2)
+            # 🔥 [核心升級] 殭屍殺手邏輯：無限循環直到找到活的 IP
+            retry_count = 0
+            max_retries = len(self.config_files) # 避免無限死循環 (如果全部都壞掉)
+            
+            while retry_count < max_retries:
+                tw_now = datetime.now(timezone.utc) + timedelta(hours=8)
+                time_str = tw_now.strftime('%H:%M:%S')
+                print(f"\n[{time_str}] 🛡️ 嘗試切換 IP ({retry_count+1}/{max_retries})...")
                 
-                if not self.config_files:
-                    print("❌ 無設定檔")
-                    return
+                try:
+                    # 1. 殺掉舊 VPN
+                    if IS_WINDOWS:
+                        subprocess.run(["taskkill", "/F", "/IM", "openvpn.exe"], capture_output=True)
+                    else:
+                        subprocess.run(["sudo", "killall", "openvpn"], capture_output=True)
+                    await asyncio.sleep(2)
+                    
+                    # 2. 檢查設定檔
+                    if not self.config_files:
+                        print("❌ 無設定檔")
+                        return
+                    
+                    # 3. 啟動新 VPN
+                    config_name = self.config_files[self.config_index]
+                    self.config_index = (self.config_index + 1) % len(self.config_files)
+                    
+                    with open("vpn_auth.txt", "w") as f: f.write(f"{VPN_USER}\n{VPN_PASS}")
+                    cmd = OPENVPN_CMD + ["--config", f"{CONFIG_DIR}/{config_name}", "--auth-user-pass", "vpn_auth.txt"]
+                    if not IS_WINDOWS: cmd.append("--daemon")
+                    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    
+                    print(f"{C.C}🌐 連線測試中：{config_name}{C.E}")
+                    
+                    # 4. 🔥 強制驗證：如果不通，直接換下一個！(殭屍過濾)
+                    ip_is_good = False
+                    for _ in range(5): # 給它 15 秒測試連線
+                        await asyncio.sleep(3)
+                        try:
+                            resp = await session.get(f"{self.base_url}/{self.sub}?fields=gems", headers=self.headers, timeout=5)
+                            if resp.status_code == 200:
+                                ip_is_good = True
+                                break
+                        except: continue
+                    
+                    if ip_is_good:
+                        print(f"{C.G}✅ 驗證成功！IP 是活的！開工！{C.E}")
+                        self.send_telegram(f"✅ IP 切換成功\n🌐 節點：{config_name}\n🚀 恢復刷分...")
+                        return # 成功才離開這個函式，讓主程式繼續跑
+                    else:
+                        print(f"{C.R}💀 驗證失敗（死節點），立刻跳過...{C.E}")
+                        retry_count += 1
+                        # 這裡不 return，while 迴圈會繼續跑，自動試下一個 VPN
                 
-                config_name = self.config_files[self.config_index]
-                self.config_index = (self.config_index + 1) % len(self.config_files)
-                with open("vpn_auth.txt", "w") as f: f.write(f"{VPN_USER}\n{VPN_PASS}")
-                cmd = OPENVPN_CMD + ["--config", f"{CONFIG_DIR}/{config_name}", "--auth-user-pass", "vpn_auth.txt"]
-                if not IS_WINDOWS: cmd.append("--daemon")
-                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                
-                print(f"{C.C}🌐 連線目標：{config_name}{C.E}")
-                
-                # 🔥 [新增] 安全驗證：先確認 IP 能通才放行，避免空轉
-                for _ in range(6): 
-                    await asyncio.sleep(3)
-                    try:
-                        resp = await session.get(f"{self.base_url}/{self.sub}?fields=gems", headers=self.headers, timeout=5)
-                        if resp.status_code == 200:
-                            print(f"{C.G}✅ IP 驗證成功！開工！{C.E}")
-                            self.send_telegram(f"✅ IP 切換成功！\n🌐 新節點：{config_name}\n🚀 繼續刷分中...")
-                            return
-                    except: continue
-                print(f"{C.Y}⚠️ 驗證超時，強制嘗試開工...{C.E}")
+                except Exception as e:
+                    print(f"{C.R}❌ VPN 錯誤：{e}，跳過...{C.E}")
+                    retry_count += 1
 
-            except Exception as e:
-                print(f"{C.R}❌ VPN 錯誤：{e}{C.E}")
+            # 如果迴圈跑完，代表所有 VPN 都試過了全掛
+            print(f"{C.R}💥 災難：所有 VPN 節點皆失效，暫停 60 秒...{C.E}")
+            self.send_telegram("💥 警告：所有 VPN 節點皆失效，暫停運作中...")
+            await asyncio.sleep(60)
 
     async def fetch_user_data(self, session):
         try:
