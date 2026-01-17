@@ -9,9 +9,9 @@ jobs:
   nuclear-attack:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false     # 即使其中一個機器人失敗，其他機器人也會繼續運行
+      fail-fast: false      # 即使其中一個機器人失敗，其他機器人也會繼續運行
       matrix:
-        bot_id: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] # 定義 20 個機器人編號
+        bot_id: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15] # 15 個並行任務
     permissions:
       contents: read
     
@@ -42,7 +42,7 @@ jobs:
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-       run: |
-          # 👇 這裡改成了「無限復活迴圈」
-          # 如果 python 程式結束 (exit)，它會等待 5 秒然後自動重新執行
+        # 👇【修正】這裡的縮排必須跟 env 對齊
+        run: |
+          # 無限復活迴圈
           timeout 350m bash -c "while true; do python main-auto-vpn.py; echo '⚠️ 偵測到程式退出，5秒後重啟...'; sleep 5; done" || true
