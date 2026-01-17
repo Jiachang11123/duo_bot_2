@@ -97,7 +97,14 @@ class DuoGemNuclear:
         self.kill_switch_active = True
         self.is_running = False
         print(f"\n{C.R}⛔ {reason} -> 觸發重啟機制{C.E}")
-        # 這裡不發通知了，避免洗版，直接自殺讓 YAML 重啟
+        
+        # --- [已開啟自殺通知] ---
+        msg = f"💀 [機器人 #{BOT_ID}] 陣亡重啟\n❌ 死因：{reason}\n♻️ 正在更換 IP..."
+        self.send_telegram(msg)
+        self.send_line(msg)
+        # ----------------------
+
+        # 直接自殺讓 YAML 重啟
         os._exit(1)
 
     def connect_random_vpn(self):
@@ -141,8 +148,14 @@ class DuoGemNuclear:
                 gems = resp.json().get('gems', 0)
                 if self.initial_gems == 0: 
                     self.initial_gems = gems
-                    # 第一輪才通知，避免每90秒通知一次
                     print(f"💎 初始寶石：{gems}")
+                    
+                    # --- [已開啟復活通知] ---
+                    msg = f"👶 [機器人 #{BOT_ID}] 復活成功\n💎 當前寶石：{gems}\n🛡️ 新 IP 已上線"
+                    self.send_telegram(msg)
+                    self.send_line(msg)
+                    # ----------------------
+
                 return True
             elif resp.status_code in [403, 429]:
                 self.trigger_kill_switch(f"開局被擋 (Status: {resp.status_code})")
@@ -181,7 +194,6 @@ class DuoGemNuclear:
     async def monitor_loop(self, session):
         self.start_time = time.time()
         self.last_notify_time = time.time()
-        week_days = ["(一)", "(二)", "(三)", "(四)", "(五)", "(六)", "(日)"]
         
         while self.is_running:
             tw_time = datetime.now(timezone.utc) + timedelta(hours=8)
@@ -190,13 +202,15 @@ class DuoGemNuclear:
             elapsed = time.time() - self.start_time
             speed = self.stats['success'] / elapsed if elapsed > 0 else 0
             est_gained = int(self.stats['success'] * self.avg_gems_per_hit)
-            current_gems = self.initial_gems + est_gained
             
-            # 每 50 秒通知一次 (配合 90 秒生命週期)
-            if time.time() - self.last_notify_time > 50:
-                msg = f"🟢 [機器人 #{BOT_ID}] 存活中\n💎 累積：+{est_gained}\n⚡ 速度：{speed:.1f}/s"
-                # self.send_telegram(msg) # 選擇性開啟，避免太吵
+            # --- [已開啟每分鐘定期報告] ---
+            # 設定為 60 秒，確保在每個 90 秒的生命週期中至少會觸發一次（如果活夠久）
+            if time.time() - self.last_notify_time > 60:
+                msg = f"🟢 [機器人 #{BOT_ID}] 存活中\n💎 本輪累積：+{est_gained}\n⚡ 速度：{speed:.1f}/s"
+                self.send_telegram(msg)
+                self.send_line(msg)
                 self.last_notify_time = time.time()
+            # ---------------------------
                 
             sys.stdout.write(f"\r{C.TIME_ICON} {time_str} ({int(elapsed)}s) {C.SPEED_ICON} {speed:.1f}/s {C.SUCCESS_ICON} {self.stats['success']} {C.Y}💰 +{est_gained}{C.E}    ")
             sys.stdout.flush()
